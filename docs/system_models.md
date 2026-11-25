@@ -1,7 +1,7 @@
 # Unit 3 Architectural & Fundamental System Models (CDK5 Chapter 2)
 
 **Course:** COSC 3657 — Distributed Systems
-**Group Members:** Joachim Briam · Alvit Dido · Sadaf Kabir · Jack Coyler
+**Group Members:** Brian Joachim · Alvit Dido · Sadaf Kabir · Jack Coyler
 **Assigned Track:** **Track 1 — Critical Energy Evacuation & Handoff**
 
 **Scenario under analysis.** The forward exploration agent `robot-a0` (baseline role
