@@ -1,38 +1,64 @@
 """
-Group Scenario Implementation Module [GROUP TODO].
+Group Scenario Implementation Module -- Track 1: Critical Energy Evacuation & Handoff.
 
-Instructions:
-1. Update `SCENARIO_NAME` with your group's assigned track title.
-2. Implement `inject_scenario_event()` to simulate your assigned disruption or workload spike.
-3. Implement `compute_q_and_bounds()` to calculate the 4x6 Qualification Matrix Q and
-   dynamic role capacity bounds (L_min, L_max) from live telemetry without hardcoding
-   agent-to-role assignments.
+Scenario
+--------
+The forward exploration agent (`robot-a0`, baseline role `lead-scout`) suffers energy
+exhaustion: its traction battery falls to 12.0%, below the 20.0% mission safety cutoff.
+The E-CARGO control plane must preemptively evacuate it to the `charging` role and
+re-elect a `lead-scout` from the remaining fleet -- without restarting any container and
+without any agent-to-role pair being hardcoded.
+
+Expected Kubernetes transitions (Phase 1 -> Phase 2)
+----------------------------------------------------
+    robot-a0 : lead-scout       -> charging
+    robot-a1 : precision-mapper -> precision-mapper  (unchanged)
+    robot-a2 : cargo-carrier    -> cargo-carrier     (unchanged)
+    robot-a3 : standby          -> lead-scout
+
+All transitions are emergent properties of the ILP objective
+`maximize sum(Q[i,j] * X[i,j])` under the role-cardinality bounds [L_min, L_max];
+see `docs/system_models.md` for the derivation and the CDK5 Ch. 2 models.
 """
 import math
 from typing import Dict, List, Tuple
 import numpy as np
 from core.telemetry_bus import AGENTS, ROLES, AgentTelemetry, get_baseline_state
 
-SCENARIO_NAME = "Track X: <Replace with Your Assigned Track Name>"
+SCENARIO_NAME = "Track 1: Critical Energy Evacuation & Handoff"
 CRITICAL_BATTERY_THRESHOLD = 20.0
 RSSI_PARTITION_THRESHOLD = -85.0
 
 def inject_scenario_event() -> Tuple[Dict[str, AgentTelemetry], int]:
     """
-    Simulate your group's assigned environmental disruption or workload spike.
+    Inject this group's Track 1 disruption: critical energy depletion on robot-a0.
 
-    Track Reference:
-      - Track 1 (Energy Evacuation): Set robot-a0 battery = 12.0 (< 20.0% cutoff)
-      - Track 2 (Sensor Failure): Set robot-a1 lidar_ok = False
-      - Track 3 (Communication Decay): Set robot-a0 distance_m = 120.0, rssi_dbm = -91.0;
-        position robot-a1 at midpoint distance_m = 60.0
-      - Track 4 (Flash Demand Spike): Set pending_jobs = 4
+    Starts from the nominal baseline snapshot and mutates exactly one raw hardware
+    metric -- robot-a0's battery, driven from 95.0% to 12.0%, i.e. below the 20.0%
+    CRITICAL_BATTERY_THRESHOLD safety cutoff. Every role change observed in Phase 2 is
+    then derived by compute_q_and_bounds() and the GRA solver, not scripted here.
+
+    Returns:
+        (telemetry, pending_cargo_jobs) -- the disrupted environment state E.
     """
     telemetry, pending_jobs = get_baseline_state()
 
-    # TODO (Group Implementation):
-    # Modify `telemetry` or `pending_jobs` for your group's assigned track.
+    # --- Track 1 Implementation: Critical Energy Evacuation & Handoff -------------
+    # Environmental event: the forward `lead-scout` (robot-a0) has been operating at
+    # 40 m from the base gateway long enough to drain its traction battery below the
+    # CRITICAL_BATTERY_THRESHOLD (20.0%) safety cutoff. This is a *resource
+    # exhaustion* / partial-degradation fault (CDK5 2.4.2), not a crash-stop fault:
+    # the pod stays Running and keeps publishing telemetry, so the control plane can
+    # observe the degradation and hand the role off *before* the agent strands itself.
+    #
+    # Only the raw hardware metric is mutated here -- no agent-to-role assignment is
+    # hardcoded. The battery value flows into compute_q_and_bounds(), which zeroes
+    # robot-a0's field-role qualifications and raises Q[a0, charging] to 1.0, and the
+    # ILP solver independently elects the best remaining lead-scout.
+    telemetry["robot-a0"].battery = 12.0
 
+    # The mission's cargo backlog is unchanged by an energy event; the job queue stays
+    # at its nominal depth so that L_min[cargo-carrier] remains 1 (contrast Track 4).
     return telemetry, pending_jobs
 
 
